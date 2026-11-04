@@ -1,0 +1,19 @@
+{
+  "name": "VEX Track Tracker",
+  "short_name": "VEX Tracker",
+  "description": "Four-stop QR-code photo tracking for a VEX car.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#101827",
+  "theme_color": "#101827",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

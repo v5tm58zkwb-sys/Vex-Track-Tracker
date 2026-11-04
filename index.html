@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101827">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VEX Tracker">
+  <title>VEX Track Tracker</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <h1>VEX Track Tracker</h1>
+        <p>Four-stop QR photo system</p>
+      </div>
+      <span id="connection" class="connection">READY</span>
+    </header>
+
+    <section class="camera-panel">
+      <div class="camera-heading">
+        <h2>Live Camera</h2>
+        <span id="cameraState">Camera off</span>
+      </div>
+
+      <div class="video-wrap">
+        <video id="video" autoplay muted playsinline></video>
+        <div class="scan-frame">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <div id="cameraMessage" class="camera-message">
+          Press START CAMERA to begin
+        </div>
+      </div>
+
+      <div class="camera-controls">
+        <button id="startButton" class="primary">START CAMERA</button>
+        <button id="stopButton" class="secondary" disabled>STOP CAMERA</button>
+      </div>
+    </section>
+
+    <section class="status-panel">
+      <div class="status-title">TRACK STATUS</div>
+      <div id="status" class="status-text">Waiting to start</div>
+      <div class="status-details">
+        <div>
+          <span class="small-label">LAST STOP</span>
+          <strong id="lastStop">None</strong>
+        </div>
+        <div>
+          <span class="small-label">NEXT STOP</span>
+          <strong id="nextStop">Stop 1</strong>
+        </div>
+        <div>
+          <span class="small-label">PROGRESS</span>
+          <strong id="progressText">0 / 4</strong>
+        </div>
+      </div>
+      <div class="progress-track">
+        <div id="progressBar"></div>
+      </div>
+      <p id="motionStatus" class="motion-status">
+        Motion detection has not started.
+      </p>
+    </section>
+
+    <section class="capture-panel">
+      <h2>Photo Gallery</h2>
+      <p class="section-description">
+        One saved QR-code picture for each stop.
+      </p>
+
+      <div class="gallery">
+        <article class="photo-card" id="card-STOP1">
+          <div class="photo" id="photo-STOP1">1</div>
+          <div class="photo-info">
+            <strong>STOP 1</strong>
+            <span id="time-STOP1">Not captured</span>
+            <a id="download-STOP1" hidden download="STOP1.jpg">Download</a>
+          </div>
+        </article>
+
+        <article class="photo-card" id="card-STOP2">
+          <div class="photo" id="photo-STOP2">2</div>
+          <div class="photo-info">
+            <strong>STOP 2</strong>
+            <span id="time-STOP2">Not captured</span>
+            <a id="download-STOP2" hidden download="STOP2.jpg">Download</a>
+          </div>
+        </article>
+
+        <article class="photo-card" id="card-STOP3">
+          <div class="photo" id="photo-STOP3">3</div>
+          <div class="photo-info">
+            <strong>STOP 3</strong>
+            <span id="time-STOP3">Not captured</span>
+            <a id="download-STOP3" hidden download="STOP3.jpg">Download</a>
+          </div>
+        </article>
+
+        <article class="photo-card" id="card-STOP4">
+          <div class="photo" id="photo-STOP4">4</div>
+          <div class="photo-info">
+            <strong>STOP 4</strong>
+            <span id="time-STOP4">Not captured</span>
+            <a id="download-STOP4" hidden download="STOP4.jpg">Download</a>
+          </div>
+        </article>
+      </div>
+
+      <button id="manualButton" class="manual" disabled>
+        MANUAL CAPTURE — CURRENT QR CODE
+      </button>
+      <button id="resetButton" class="reset">
+        RESET TRACK SESSION
+      </button>
+    </section>
+
+    <footer>
+      Keep this app open in the foreground during the track run.
+      Pictures are stored locally on this iPhone.
+    </footer>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
