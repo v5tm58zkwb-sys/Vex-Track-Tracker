@@ -1,253 +1,192 @@
+
 const video = document.getElementById("video");
 const startButton = document.getElementById("startButton");
 const stopButton = document.getElementById("stopButton");
 const manualButton = document.getElementById("manualButton");
 const resetButton = document.getElementById("resetButton");
 
-const statusEl = document.getElementById("status");
 const cameraState = document.getElementById("cameraState");
 const cameraMessage = document.getElementById("cameraMessage");
-const motionStatus = document.getElementById("motionStatus");
+const statusText = document.getElementById("status");
+const connection = document.getElementById("connection");
+
+const progressText = document.getElementById("progressText");
+const progressBar = document.getElementById("progressBar");
+const lastStopText = document.getElementById("lastStop");
+const nextStopText = document.getElementById("nextStop");
+
+const trackCar = document.getElementById("trackCar");
+const trackPosition = document.getElementById("trackPosition");
+const gallery = document.getElementById("gallery");
 
 const stops = ["STOP1", "STOP2", "STOP3", "STOP4"];
 
 let stream = null;
 let scanTimer = null;
-let motionEnabled = false;
-let motionEvents = 0;
-let previousAcceleration = null;
-let lastMovementTime = Date.now();
-
-let candidateCode = null;
-let candidateSince = 0;
-let currentCode = null;
-let capturing = false;
-let lastCompleted = null;
+let scanning = false;
+let lastDetectedCode = "";
+let detectionStartTime = 0;
+let captureInProgress = false;
 
 const canvas = document.createElement("canvas");
-const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-const scanCanvas = document.createElement("canvas");
-const scanCtx = scanCanvas.getContext("2d", {
+const context = canvas.getContext("2d", {
   willReadFrequently: true
 });
 
 const DB_NAME = "VEXTrackTracker";
 const STORE_NAME = "photos";
 
+let database;
+
+// Open IndexedDB
 function openDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
 
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = function () {
       const db = request.result;
+
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "code" });
+        db.createObjectStore(STORE_NAME, {
+          keyPath: "code"
+        });
       }
     };
+
+    request.onsuccess = function () {
+      database = request.result;
+      resolve(database);
+    };
+
+    request.onerror = function () {
+      reject(request.error);
+    };
+  });
+}
+
+// Save a photo and timestamp
+function savePhoto(code, blob) {
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(
+      STORE_NAME,
+      "readwrite"
+    );
+
+    const store = transaction.objectStore(STORE_NAME);
+
+    const record = {
+      code: code,
+      photo: blob,
+      timestamp: new Date().toISOString()
+    };
+
+    const request = store.put(record);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// Get all saved stops
+function getAllPhotos() {
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(
+      STORE_NAME,
+      "readonly"
+    );
+
+    const request = transaction
+      .objectStore(STORE_NAME)
+      .getAll();
 
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
 
-async function savePhoto(record) {
-  const db = await openDatabase();
-
+// Delete all saved stops
+function clearPhotos() {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readwrite");
-    transaction.objectStore(STORE_NAME).put(record);
-
-    transaction.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-
-    transaction.onerror = () => {
-      db.close();
-      reject(transaction.error);
-    };
-  });
-}
-
-async function getPhotos() {
-  const db = await openDatabase();
-
-  return new Promise((resolve, reject) => {
-    const request = db.transaction(STORE_NAME)
-      .objectStore(STORE_NAME).getAll();
-
-    request.onsuccess = () => {
-      db.close();
-      resolve(request.result || []);
-    };
-
-    request.onerror = () => {
-      db.close();
-      reject(request.error);
-    };
-  });
-}
-
-async function clearPhotos() {
-  const db = await openDatabase();
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readwrite");
-    transaction.objectStore(STORE_NAME).clear();
-
-    transaction.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-
-    transaction.onerror = () => {
-      db.close();
-      reject(transaction.error);
-    };
-  });
-}
-
-function setStatus(message) {
-  statusEl.textContent = message;
-}
-
-function updateProgress(completed) {
-  const count = completed.length;
-
-  document.getElementById("progressText").textContent =
-    `${count} / 4`;
-
-  document.getElementById("progressBar").style.width =
-    `${count * 25}%`;
-
-  document.getElementById("lastStop").textContent =
-    count ? `Stop ${count}` : "None";
-
-  document.getElementById("nextStop").textContent =
-    count < 4 ? `Stop ${count + 1}` : "Complete";
-}
-
-function isStationary() {
-  if (!motionEnabled || motionEvents < 5) return false;
-  return Date.now() - lastMovementTime > 1400;
-}
-
-function onMotion(event) {
-  const a = event.acceleration;
-  const g = event.accelerationIncludingGravity;
-
-  let current;
-
-  if (a && a.x !== null && a.y !== null && a.z !== null) {
-    current = [a.x, a.y, a.z];
-  } else if (g && g.x !== null && g.y !== null && g.z !== null) {
-    current = [g.x, g.y, g.z];
-  } else {
-    return;
-  }
-
-  motionEvents++;
-
-  if (previousAcceleration) {
-    const difference = Math.sqrt(
-      current.reduce((sum, value, index) => {
-        return sum + Math.pow(value - previousAcceleration[index], 2);
-      }, 0)
+    const transaction = database.transaction(
+      STORE_NAME,
+      "readwrite"
     );
 
-    const threshold =
-      a && a.x !== null ? 0.45 : 0.85;
+    const request = transaction
+      .objectStore(STORE_NAME)
+      .clear();
 
-    if (difference > threshold) {
-      lastMovementTime = Date.now();
-    }
-  }
-
-  previousAcceleration = current;
-
-  motionStatus.textContent = isStationary()
-    ? "Car appears stationary."
-    : "Movement detected or waiting for a stable reading.";
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
 }
 
-async function enableMotion() {
-  try {
-    if (typeof DeviceMotionEvent === "undefined") {
-      motionEnabled = false;
-      motionStatus.textContent =
-        "Motion sensor unavailable. Use manual capture.";
-      return;
-    }
-
-    if (typeof DeviceMotionEvent.requestPermission === "function") {
-      const permission = await DeviceMotionEvent.requestPermission();
-
-      if (permission !== "granted") {
-        motionEnabled = false;
-        motionStatus.textContent =
-          "Motion permission denied. Use manual capture.";
-        return;
-      }
-    }
-
-    window.addEventListener("devicemotion", onMotion, true);
-    motionEnabled = true;
-    lastMovementTime = Date.now();
-
-    motionStatus.textContent =
-      "Motion sensor enabled. Waiting for readings.";
-  } catch (error) {
-    motionEnabled = false;
-    motionStatus.textContent =
-      "Motion detection unavailable. Use manual capture.";
-  }
-}
-
+// Start camera
 async function startCamera() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    alert("Camera access requires HTTPS and a supported browser.");
-    return;
-  }
-
-  if (typeof jsQR !== "function") {
-    alert("QR scanner library did not load. Connect to the internet and reload.");
-    return;
-  }
-
   try {
-    await enableMotion();
+    if (!navigator.mediaDevices ||
+        !navigator.mediaDevices.getUserMedia) {
+      throw new Error(
+        "Camera access requires HTTPS or localhost."
+      );
+    }
+
+    if (stream) {
+      stopCamera();
+    }
+
+    cameraMessage.textContent = "Requesting camera permission...";
+    statusText.textContent = "Starting camera...";
 
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        facingMode: {
+          ideal: "environment"
+        },
+        width: {
+          ideal: 1280
+        },
+        height: {
+          ideal: 720
+        }
       }
     });
 
     video.srcObject = stream;
+    video.setAttribute("playsinline", "");
+    video.muted = true;
+
     await video.play();
 
-    startButton.disabled = true;
-    stopButton.disabled = false;
+    scanning = true;
 
-    cameraState.textContent = "Camera running";
-    cameraMessage.textContent = "Searching for STOP1–STOP4";
-    document.getElementById("connection").textContent = "SCANNING";
+    cameraState.textContent = "Camera is running.";
+    cameraMessage.textContent =
+      "Point the camera toward the QR codes.";
 
-    setStatus("Camera running — searching for QR codes.");
+    connection.textContent = "Camera connected";
+    statusText.textContent = "Scanning for STOP1 through STOP4...";
 
-    scanTimer = setInterval(scanFrame, 180);
+    if (scanTimer) {
+      clearInterval(scanTimer);
+    }
+
+    scanTimer = setInterval(scanFrame, 150);
+
   } catch (error) {
-    console.error(error);
-    alert("Could not start camera. Check camera permissions in iPhone Settings.");
-    stopCamera();
+    console.error("Camera error:", error);
+
+    cameraState.textContent = "Camera could not start.";
+    cameraMessage.textContent = error.message;
+    statusText.textContent = "Camera error.";
   }
 }
 
+// Stop camera
 function stopCamera() {
+  scanning = false;
+
   if (scanTimer) {
     clearInterval(scanTimer);
     scanTimer = null;
@@ -260,229 +199,332 @@ function stopCamera() {
 
   video.srcObject = null;
 
-  startButton.disabled = false;
-  stopButton.disabled = true;
-
-  cameraState.textContent = "Camera off";
-  cameraMessage.textContent = "Press START CAMERA to begin";
-  document.getElementById("connection").textContent = "READY";
-
-  window.removeEventListener("devicemotion", onMotion, true);
-  motionEnabled = false;
+  cameraState.textContent = "Camera is stopped.";
+  cameraMessage.textContent = "Press Start Camera to scan again.";
+  connection.textContent = "Camera disconnected";
 }
 
+// Scan camera frames for QR codes
 function scanFrame() {
-  if (!video.videoWidth || !video.videoHeight) return;
+  if (!scanning ||
+      video.readyState !== video.HAVE_ENOUGH_DATA ||
+      video.videoWidth === 0) {
+    return;
+  }
 
-  const scale = Math.min(1, 800 / video.videoWidth);
-  scanCanvas.width = Math.round(video.videoWidth * scale);
-  scanCanvas.height = Math.round(video.videoHeight * scale);
+  if (typeof jsQR !== "function") {
+    statusText.textContent = "QR scanning library did not load.";
+    return;
+  }
 
-  scanCtx.drawImage(
-    video, 0, 0, scanCanvas.width, scanCanvas.height
+  const scale = Math.min(
+    1,
+    1280 / video.videoWidth
   );
 
-  const image = scanCtx.getImageData(
-    0, 0, scanCanvas.width, scanCanvas.height
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+
+  context.drawImage(
+    video,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+
+  const imageData = context.getImageData(
+    0,
+    0,
+    canvas.width,
+    canvas.height
   );
 
   const result = jsQR(
-    image.data,
-    image.width,
-    image.height,
-    { inversionAttempts: "dontInvert" }
-  );
-
-  if (!result || !stops.includes(result.data)) {
-    candidateCode = null;
-    candidateSince = 0;
-    currentCode = null;
-    manualButton.disabled = true;
-
-    cameraMessage.textContent = "Searching for QR code";
-
-    if (lastCompleted) {
-      const next = stops.indexOf(lastCompleted) + 1;
-      setStatus(
-        next < 4
-          ? `Traveling after Stop ${next} — next: Stop ${next + 1}`
-          : "All four stops completed!"
-      );
+    imageData.data,
+    imageData.width,
+    imageData.height,
+    {
+      inversionAttempts: "attemptBoth"
     }
-
-    return;
-  }
-
-  currentCode = result.data;
-  manualButton.disabled = false;
-
-  if (candidateCode !== result.data) {
-    candidateCode = result.data;
-    candidateSince = Date.now();
-  }
-
-  const stopNumber = stops.indexOf(result.data) + 1;
-
-  cameraMessage.textContent = `QR CODE DETECTED: STOP ${stopNumber}`;
-
-  if (savedCodes.has(result.data)) {
-    setStatus(`Stop ${stopNumber} already captured.`);
-    return;
-  }
-
-  if (capturing) return;
-
-  setStatus(
-    isStationary()
-      ? `Stop ${stopNumber} detected — preparing photo.`
-      : `Stop ${stopNumber} detected — waiting for car to stop.`
   );
 
-  const qrHeldLongEnough = Date.now() - candidateSince > 700;
+  if (!result || !result.data) {
+    lastDetectedCode = "";
+    detectionStartTime = 0;
+    return;
+  }
 
-  if (qrHeldLongEnough && isStationary()) {
-    captureStop(result.data);
+  const detectedCode = result.data
+    .trim()
+    .toUpperCase()
+    .replace(/\s/g, "");
+
+  if (!stops.includes(detectedCode)) {
+    statusText.textContent =
+      "QR detected, but it is not a valid stop: " + detectedCode;
+    lastDetectedCode = "";
+    detectionStartTime = 0;
+    return;
+  }
+
+  statusText.textContent = "Detected " + detectedCode;
+
+  const now = Date.now();
+
+  if (detectedCode !== lastDetectedCode) {
+    lastDetectedCode = detectedCode;
+    detectionStartTime = now;
+    return;
+  }
+
+  // Require the same code in consecutive scans for 250 ms.
+  // The car does NOT have to be stationary.
+  if (now - detectionStartTime >= 250) {
+    captureStop(detectedCode);
   }
 }
 
-const savedCodes = new Set();
-
+// Capture a picture
 async function captureStop(code) {
-  if (capturing || savedCodes.has(code)) return;
-  if (!video.videoWidth || !video.videoHeight) return;
+  if (captureInProgress || !database) {
+    return;
+  }
 
-  capturing = true;
+  if (!video.videoWidth || !video.videoHeight) {
+    statusText.textContent = "Camera is not ready for a photo.";
+    return;
+  }
+
+  captureInProgress = true;
 
   try {
-    // Capture the actual camera image, not a screen screenshot.
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    statusText.textContent = "Capturing " + code + "...";
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const photoCanvas = document.createElement("canvas");
+    photoCanvas.width = video.videoWidth;
+    photoCanvas.height = video.videoHeight;
+
+    const photoContext = photoCanvas.getContext("2d");
+
+    photoContext.drawImage(
+      video,
+      0,
+      0,
+      photoCanvas.width,
+      photoCanvas.height
+    );
 
     const blob = await new Promise(resolve => {
-      canvas.toBlob(resolve, "image/jpeg", 0.92);
+      photoCanvas.toBlob(
+        resolve,
+        "image/jpeg",
+        0.9
+      );
     });
 
-    if (!blob) throw new Error("Could not create photo.");
+    if (!blob) {
+      throw new Error("Could not create photo.");
+    }
 
-    const record = {
-      code,
-      timestamp: new Date().toISOString(),
-      image: blob
-    };
+    await savePhoto(code, blob);
 
-    await savePhoto(record);
-    savedCodes.add(code);
-    lastCompleted = code;
+    statusText.textContent =
+      code + " photo captured and saved!";
+
+    lastDetectedCode = "";
+    detectionStartTime = 0;
 
     await renderGallery();
 
-    const number = stops.indexOf(code) + 1;
-
-    cameraMessage.textContent = `STOP ${number} PHOTO SAVED`;
-    setStatus(`Stop ${number} photo successfully saved.`);
-
-    if (savedCodes.size === 4) {
-      setStatus("All four stops completed!");
-    }
   } catch (error) {
-    console.error(error);
-    setStatus("Photo save failed. Try manual capture again.");
+    console.error("Capture error:", error);
+    statusText.textContent =
+      "Could not save photo: " + error.message;
+
   } finally {
-    capturing = false;
+    captureInProgress = false;
   }
 }
 
-manualButton.addEventListener("click", () => {
-  if (currentCode && !savedCodes.has(currentCode)) {
-    captureStop(currentCode);
-  }
-});
+// Manual capture of the next missing stop
+async function manualCapture() {
+  const records = await getAllPhotos();
+  const savedCodes = records.map(record => record.code);
 
-async function renderGallery() {
-  const photos = await getPhotos();
-
-  savedCodes.clear();
-
-  photos.forEach(record => {
-    savedCodes.add(record.code);
-  });
-
-  for (const code of stops) {
-    const record = photos.find(photo => photo.code === code);
-    const photoElement = document.getElementById(`photo-${code}`);
-    const timeElement = document.getElementById(`time-${code}`);
-    const downloadElement =
-      document.getElementById(`download-${code}`);
-
-    if (!record) {
-      photoElement.textContent = String(stops.indexOf(code) + 1);
-      timeElement.textContent = "Not captured";
-      downloadElement.hidden = true;
-      downloadElement.removeAttribute("href");
-      continue;
-    }
-
-    const imageUrl = URL.createObjectURL(record.image);
-
-    photoElement.replaceChildren();
-
-    const image = document.createElement("img");
-    image.src = imageUrl;
-    image.alt = `${code} captured QR code`;
-    photoElement.appendChild(image);
-
-    timeElement.textContent =
-      new Date(record.timestamp).toLocaleString();
-
-    downloadElement.href = imageUrl;
-    downloadElement.hidden = false;
-  }
-
-  updateProgress(photos.sort(
-    (a, b) => stops.indexOf(a.code) - stops.indexOf(b.code)
-  ));
-}
-
-async function resetSession() {
-  const confirmed = confirm(
-    "Delete all four saved pictures and reset the track session?"
+  const nextCode = stops.find(code =>
+    !savedCodes.includes(code)
   );
 
-  if (!confirmed) return;
+  if (!nextCode) {
+    statusText.textContent = "All four stops are already saved.";
+    return;
+  }
+
+  await captureStop(nextCode);
+}
+
+// Update car location on track
+function updateTrackPosition(code) {
+  const positions = {
+    STOP1: { x: 105, y: 35 },
+    STOP2: { x: 235, y: 35 },
+    STOP3: { x: 235, y: 215 },
+    STOP4: { x: 105, y: 215 }
+  };
+
+  const position = positions[code];
+
+  if (!position) {
+    return;
+  }
+
+  trackCar.setAttribute(
+    "transform",
+    `translate(${position.x} ${position.y})`
+  );
+
+  trackPosition.textContent = "Car position: " + code;
+
+  stops.forEach(stop => {
+    const marker = document.getElementById("marker-" + stop);
+    marker.classList.toggle("visited", stop === code);
+  });
+}
+
+// Update the track and progress using saved records
+async function renderGallery() {
+  const records = await getAllPhotos();
+
+  records.sort((a, b) =>
+    new Date(a.timestamp) - new Date(b.timestamp)
+  );
+
+  gallery.innerHTML = "";
+
+  const savedCodes = records.map(record => record.code);
+
+  const completed = stops.filter(code =>
+    savedCodes.includes(code)
+  );
+
+  progressText.textContent =
+    completed.length + " of 4 stops completed";
+
+  progressBar.style.width =
+    (completed.length / 4 * 100) + "%";
+
+  lastStopText.textContent =
+    records.length
+      ? records[records.length - 1].code
+      : "None";
+
+  const nextStop = stops.find(code =>
+    !savedCodes.includes(code)
+  );
+
+  nextStopText.textContent = nextStop || "All stops completed";
+
+  // Display the most recently saved stop on the track.
+  if (records.length > 0) {
+    const latest = records[records.length - 1];
+    updateTrackPosition(latest.code);
+  } else {
+    trackPosition.textContent =
+      "Car position: Waiting for first stop";
+
+    trackCar.setAttribute("transform", "translate(105 35)");
+
+    stops.forEach(stop => {
+      document
+        .getElementById("marker-" + stop)
+        .classList.remove("visited");
+    });
+  }
+
+  records.forEach(record => {
+    const card = document.createElement("div");
+    card.className = "photoCard";
+
+    const image = document.createElement("img");
+    const imageUrl = URL.createObjectURL(record.photo);
+
+    image.src = imageUrl;
+    image.alt = record.code + " captured photo";
+
+    const heading = document.createElement("h3");
+    heading.textContent = record.code;
+
+    const time = document.createElement("p");
+    time.className = "muted";
+    time.textContent =
+      new Date(record.timestamp).toLocaleString();
+
+    const download = document.createElement("a");
+    download.href = imageUrl;
+    download.download = record.code + ".jpg";
+    download.textContent = "Download photo";
+
+    card.appendChild(heading);
+    card.appendChild(image);
+    card.appendChild(time);
+    card.appendChild(download);
+
+    gallery.appendChild(card);
+  });
+}
+
+// Reset all stops and saved photos
+async function resetStops() {
+  const confirmed = confirm(
+    "Are you sure you want to delete all four saved stops and photos?"
+  );
+
+  if (!confirmed) {
+    return;
+  }
 
   await clearPhotos();
 
-  savedCodes.clear();
-  lastCompleted = null;
-  candidateCode = null;
-  candidateSince = 0;
-  currentCode = null;
+  lastDetectedCode = "";
+  detectionStartTime = 0;
 
   await renderGallery();
 
-  setStatus("Session reset. Ready for a new run.");
-  cameraMessage.textContent = "Searching for QR codes";
+  statusText.textContent = "All stops have been reset.";
 }
 
+// Button events
 startButton.addEventListener("click", startCamera);
 stopButton.addEventListener("click", stopCamera);
-resetButton.addEventListener("click", resetSession);
+manualButton.addEventListener("click", manualCapture);
+resetButton.addEventListener("click", resetStops);
 
-window.addEventListener("pagehide", stopCamera);
-
-async function initialize() {
+// Initialize app
+async function initializeApp() {
   try {
+    await openDatabase();
     await renderGallery();
 
-    if ("serviceWorker" in navigator) {
-      await navigator.serviceWorker.register("./service-worker.js");
-    }
+    cameraState.textContent = "Camera is stopped.";
+    connection.textContent = "Database connected";
+    statusText.textContent = "Ready to scan QR codes.";
+
   } catch (error) {
-    console.error(error);
-    setStatus("App loaded, but local storage initialization failed.");
+    console.error("Database error:", error);
+    statusText.textContent =
+      "Could not open photo database.";
   }
 }
 
-initialize();
+initializeApp();
+
+// Register service worker if available
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js")
+      .catch(error => {
+        console.error("Service worker registration failed:", error);
+      });
+  });
+}
