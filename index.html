@@ -1,131 +1,255 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#101827">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="VEX Tracker">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#172554">
   <title>VEX Track Tracker</title>
+
   <link rel="manifest" href="./manifest.json">
-  <link rel="icon" href="./icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css">
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+      color: #172033;
+    }
+
+    .container {
+      max-width: 850px;
+      margin: auto;
+    }
+
+    h1, h2 {
+      text-align: center;
+    }
+
+    .panel {
+      background: white;
+      padding: 18px;
+      margin: 16px 0;
+      border-radius: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+
+    button {
+      padding: 12px 18px;
+      margin: 5px;
+      border: none;
+      border-radius: 8px;
+      background: #2563eb;
+      color: white;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #475569;
+    }
+
+    button.danger {
+      background: #dc2626;
+    }
+
+    video {
+      display: block;
+      width: 100%;
+      max-height: 400px;
+      background: black;
+      border-radius: 10px;
+      margin-top: 12px;
+    }
+
+    #status {
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    #cameraMessage {
+      color: #475569;
+    }
+
+    .progressBackground {
+      height: 18px;
+      background: #e2e8f0;
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    #progressBar {
+      height: 100%;
+      width: 0%;
+      background: #16a34a;
+      transition: width .3s;
+    }
+
+    #track {
+      width: 100%;
+      max-width: 550px;
+      display: block;
+      margin: 15px auto;
+    }
+
+    .stopMarker {
+      fill: #cbd5e1;
+      stroke: #334155;
+      stroke-width: 2;
+    }
+
+    .stopMarker.visited {
+      fill: #22c55e;
+    }
+
+    #trackCar {
+      transition: transform .6s ease;
+    }
+
+    .photoGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+    }
+
+    .photoCard {
+      border: 1px solid #e2e8f0;
+      padding: 10px;
+      border-radius: 10px;
+      min-width: 0;
+    }
+
+    .photoCard img {
+      width: 100%;
+      border-radius: 8px;
+    }
+
+    .photoCard a {
+      display: inline-block;
+      margin-top: 8px;
+    }
+
+    .muted {
+      color: #64748b;
+      font-size: 14px;
+    }
+  </style>
 </head>
+
 <body>
-  <main class="app">
-    <header class="topbar">
-      <div>
-        <h1>VEX Track Tracker</h1>
-        <p>Four-stop QR photo system</p>
-      </div>
-      <span id="connection" class="connection">READY</span>
-    </header>
+  <div class="container">
 
-    <section class="camera-panel">
-      <div class="camera-heading">
-        <h2>Live Camera</h2>
-        <span id="cameraState">Camera off</span>
-      </div>
+    <h1>VEX Track Tracker</h1>
 
-      <div class="video-wrap">
-        <video id="video" autoplay muted playsinline></video>
-        <div class="scan-frame">
-          <span></span><span></span><span></span><span></span>
-        </div>
-        <div id="cameraMessage" class="camera-message">
-          Press START CAMERA to begin
-        </div>
-      </div>
+    <div class="panel">
+      <h2>Camera</h2>
 
-      <div class="camera-controls">
-        <button id="startButton" class="primary">START CAMERA</button>
-        <button id="stopButton" class="secondary" disabled>STOP CAMERA</button>
-      </div>
-    </section>
+      <button id="startButton">Start Camera</button>
+      <button id="stopButton" class="secondary">Stop Camera</button>
+      <button id="manualButton" class="secondary">Manual Capture</button>
+      <button id="resetButton" class="danger">Reset Stops</button>
 
-    <section class="status-panel">
-      <div class="status-title">TRACK STATUS</div>
-      <div id="status" class="status-text">Waiting to start</div>
-      <div class="status-details">
-        <div>
-          <span class="small-label">LAST STOP</span>
-          <strong id="lastStop">None</strong>
-        </div>
-        <div>
-          <span class="small-label">NEXT STOP</span>
-          <strong id="nextStop">Stop 1</strong>
-        </div>
-        <div>
-          <span class="small-label">PROGRESS</span>
-          <strong id="progressText">0 / 4</strong>
-        </div>
-      </div>
-      <div class="progress-track">
+      <video id="video" autoplay playsinline muted></video>
+
+      <p id="cameraState">Camera is stopped.</p>
+      <p id="cameraMessage">Press Start Camera to begin scanning QR codes.</p>
+      <p id="status">Waiting for a QR code...</p>
+      <p id="connection" class="muted">Ready</p>
+    </div>
+
+    <div class="panel">
+      <h2>Track Map</h2>
+
+      <svg id="track" viewBox="0 0 340 260"
+           xmlns="http://www.w3.org/2000/svg">
+
+        <!-- Track outline -->
+        <rect x="55" y="35" width="230" height="180"
+              rx="65" ry="65"
+              fill="none"
+              stroke="#334155"
+              stroke-width="24"/>
+
+        <!-- Bridge on top short side -->
+        <path d="M145 23 L195 23"
+              stroke="#f59e0b"
+              stroke-width="30"
+              stroke-linecap="round"/>
+
+        <path d="M145 23 L195 23"
+              stroke="#ffffff"
+              stroke-width="3"
+              stroke-dasharray="7 5"/>
+
+        <!-- Bridge on bottom short side -->
+        <path d="M145 227 L195 227"
+              stroke="#f59e0b"
+              stroke-width="30"
+              stroke-linecap="round"/>
+
+        <path d="M145 227 L195 227"
+              stroke="#ffffff"
+              stroke-width="3"
+              stroke-dasharray="7 5"/>
+
+        <!-- Stop markers -->
+        <circle id="marker-STOP1" class="stopMarker"
+                cx="105" cy="35" r="14"/>
+        <circle id="marker-STOP2" class="stopMarker"
+                cx="235" cy="35" r="14"/>
+        <circle id="marker-STOP3" class="stopMarker"
+                cx="235" cy="215" r="14"/>
+        <circle id="marker-STOP4" class="stopMarker"
+                cx="105" cy="215" r="14"/>
+
+        <!-- Stop labels -->
+        <g font-size="11" text-anchor="middle" fill="#172033">
+          <text x="105" y="12">STOP 1</text>
+          <text x="235" y="12">STOP 2</text>
+          <text x="235" y="250">STOP 3</text>
+          <text x="105" y="250">STOP 4</text>
+        </g>
+
+        <!-- Moving car icon -->
+        <g id="trackCar" transform="translate(105 35)">
+          <rect x="-12" y="-8" width="24" height="16"
+                rx="5" fill="#2563eb"
+                stroke="#ffffff" stroke-width="2"/>
+          <circle cx="-7" cy="-9" r="3" fill="#172033"/>
+          <circle cx="7" cy="-9" r="3" fill="#172033"/>
+          <circle cx="-7" cy="9" r="3" fill="#172033"/>
+          <circle cx="7" cy="9" r="3" fill="#172033"/>
+        </g>
+      </svg>
+
+      <p id="trackPosition" style="text-align:center;">
+        Car position: Waiting for first stop
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>Stop Progress</h2>
+      <p id="progressText">0 of 4 stops completed</p>
+
+      <div class="progressBackground">
         <div id="progressBar"></div>
       </div>
-      <p id="motionStatus" class="motion-status">
-        Motion detection has not started.
-      </p>
-    </section>
 
-    <section class="capture-panel">
-      <h2>Photo Gallery</h2>
-      <p class="section-description">
-        One saved QR-code picture for each stop.
-      </p>
+      <p>Last detected stop: <strong id="lastStop">None</strong></p>
+      <p>Next stop: <strong id="nextStop">STOP1</strong></p>
+    </div>
 
-      <div class="gallery">
-        <article class="photo-card" id="card-STOP1">
-          <div class="photo" id="photo-STOP1">1</div>
-          <div class="photo-info">
-            <strong>STOP 1</strong>
-            <span id="time-STOP1">Not captured</span>
-            <a id="download-STOP1" hidden download="STOP1.jpg">Download</a>
-          </div>
-        </article>
+    <div class="panel">
+      <h2>Captured Photos</h2>
+      <div id="gallery" class="photoGrid"></div>
+    </div>
 
-        <article class="photo-card" id="card-STOP2">
-          <div class="photo" id="photo-STOP2">2</div>
-          <div class="photo-info">
-            <strong>STOP 2</strong>
-            <span id="time-STOP2">Not captured</span>
-            <a id="download-STOP2" hidden download="STOP2.jpg">Download</a>
-          </div>
-        </article>
-
-        <article class="photo-card" id="card-STOP3">
-          <div class="photo" id="photo-STOP3">3</div>
-          <div class="photo-info">
-            <strong>STOP 3</strong>
-            <span id="time-STOP3">Not captured</span>
-            <a id="download-STOP3" hidden download="STOP3.jpg">Download</a>
-          </div>
-        </article>
-
-        <article class="photo-card" id="card-STOP4">
-          <div class="photo" id="photo-STOP4">4</div>
-          <div class="photo-info">
-            <strong>STOP 4</strong>
-            <span id="time-STOP4">Not captured</span>
-            <a id="download-STOP4" hidden download="STOP4.jpg">Download</a>
-          </div>
-        </article>
-      </div>
-
-      <button id="manualButton" class="manual" disabled>
-        MANUAL CAPTURE — CURRENT QR CODE
-      </button>
-      <button id="resetButton" class="reset">
-        RESET TRACK SESSION
-      </button>
-    </section>
-
-    <footer>
-      Keep this app open in the foreground during the track run.
-      Pictures are stored locally on this iPhone.
-    </footer>
-  </main>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="./app.js"></script>
